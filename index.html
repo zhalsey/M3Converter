@@ -511,7 +511,7 @@
                 <label class="input-label">Price in USD per MBF</label>
                 <div class="input-row">
                     <span class="dollar-sign">$</span>
-                    <input type="text" inputmode="decimal" class="price-input" id="priceInput" placeholder="450" autofocus>
+                    <input type="text" inputmode="decimal" class="price-input" id="priceInput" value="1000" placeholder="450" autofocus>
                     <div class="input-unit">/MBF<br><span>1,000 bd ft</span></div>
                 </div>
                 <div class="method-info" id="methodInfo">
@@ -563,6 +563,9 @@ const CURRENCIES = [
     { code: 'MXN', name: 'Mexican Peso', symbol: 'Mex$', flag: '🇲🇽' },
     { code: 'BRL', name: 'Brazilian Real', symbol: 'R$', flag: '🇧🇷' },
     { code: 'INR', name: 'Indian Rupee', symbol: '₹', flag: '🇮🇳' },
+    { code: 'PKR', name: 'Pakistani Rupee', symbol: 'Rs', flag: '🇵🇰' },
+    { code: 'THB', name: 'Thai Baht', symbol: '฿', flag: '🇹🇭' },
+    { code: 'VND', name: 'Vietnamese Dong', symbol: '₫', flag: '🇻🇳' },
     { code: 'KRW', name: 'South Korean Won', symbol: '₩', flag: '🇰🇷' },
     { code: 'IDR', name: 'Indonesian Rupiah', symbol: 'Rp', flag: '🇮🇩' },
     { code: 'MYR', name: 'Malaysian Ringgit', symbol: 'RM', flag: '🇲🇾' },
@@ -572,7 +575,7 @@ const CURRENCIES = [
     { code: 'TRY', name: 'Turkish Lira', symbol: '₺', flag: '🇹🇷' },
 ];
 
-const DEFAULT_ACTIVE = ['EUR', 'CAD', 'GBP', 'JPY', 'CNY', 'AUD', 'SEK', 'NOK', 'BRL', 'CHF'];
+const DEFAULT_ACTIVE = ['EUR', 'CAD', 'GBP', 'PKR'];
 
 // ─── STATE ──────────────────────────────────────────────────────
 // rates starts EMPTY — no conversions until live data loads
@@ -652,64 +655,90 @@ async function fetchRates() {
     const banner = document.getElementById('statusBanner');
     const dot = document.getElementById('liveDot');
 
-    for (const source of RATE_SOURCES) {
+    let primaryResult = null;
+    let primarySourceIndex = -1;
+
+    // Try each source until one succeeds
+    for (let i = 0; i < RATE_SOURCES.length; i++) {
         try {
-            const result = await source.fetch(codes);
+            const result = await RATE_SOURCES[i].fetch(codes);
             if (Object.keys(result.rates).length < 3) throw new Error('Too few rates returned');
-
-            // Success — store live rates
-            rates = result.rates;
-            rateDate = result.date;
-            rateSource = result.source;
-            ratesLoaded = true;
-            fetchAttempts = 0;
-
-            // Update header
-            timeEl.textContent = `${result.source} · ${result.date}`;
-            dot.style.background = '#4caf50'; // green = live
-
-            // Check if rates are stale (older than 3 days — covers weekends)
-            const ageMs = Date.now() - new Date(result.date + 'T00:00:00Z').getTime();
-            const ageDays = ageMs / (1000 * 60 * 60 * 24);
-
-            if (ageDays > 3) {
-                banner.className = 'status-banner stale';
-                banner.innerHTML = `⚠ Rates are ${Math.floor(ageDays)} days old (${result.date}). ECB may not have published recent data.<br><span class="retry-info">Source: ${result.source}</span>`;
-                dot.style.background = '#ffb700'; // yellow = stale
-            } else {
-                banner.className = 'status-banner';
-                banner.style.display = 'none';
-            }
-
-            renderGrid();
-            return; // done
+            primaryResult = result;
+            primarySourceIndex = i;
+            break;
         } catch (e) {
-            console.warn(`[m3converter] ${source.name} failed:`, e.message);
+            console.warn(`[m3converter] ${RATE_SOURCES[i].name} failed:`, e.message);
             continue;
         }
     }
 
-    // ── ALL 4 APIs FAILED ──
-    fetchAttempts++;
-
-    if (!ratesLoaded) {
-        // Never loaded — show prominent error, no conversions
-        timeEl.textContent = 'RATES UNAVAILABLE';
-        dot.style.background = '#e53935';
-        banner.className = 'status-banner error';
-        banner.innerHTML = `⚠ Could not load exchange rates from any source.<br><span class="retry-info">Tried 4 APIs. Retrying in ${Math.min(15 * Math.pow(2, fetchAttempts - 1), 300)}s... Check your internet connection.</span>`;
-        renderGrid(); // will show error state
-    } else {
-        // Had rates before but refresh failed — warn clearly
-        timeEl.textContent = `${rateSource} · ${rateDate} (REFRESH FAILED)`;
-        dot.style.background = '#ffb700';
-        banner.className = 'status-banner stale';
-        banner.innerHTML = `⚠ Rate refresh failed — still showing rates from ${rateDate}.<br><span class="retry-info">Retrying in ${Math.min(15 * Math.pow(2, fetchAttempts - 1), 300)}s...</span>`;
+    if (!primaryResult) {
+        // ── ALL SOURCES FAILED ──
+        fetchAttempts++;
+        if (!ratesLoaded) {
+            timeEl.textContent = 'RATES UNAVAILABLE';
+            dot.style.background = '#e53935';
+            banner.className = 'status-banner error';
+            banner.innerHTML = `⚠ Could not load exchange rates from any source.<br><span class="retry-info">Tried ${RATE_SOURCES.length} APIs. Retrying in ${Math.min(15 * Math.pow(2, fetchAttempts - 1), 300)}s... Check your internet connection.</span>`;
+            renderGrid();
+        } else {
+            timeEl.textContent = `${rateSource} · ${rateDate} (REFRESH FAILED)`;
+            dot.style.background = '#ffb700';
+            banner.className = 'status-banner stale';
+            banner.innerHTML = `⚠ Rate refresh failed — still showing rates from ${rateDate}.<br><span class="retry-info">Retrying in ${Math.min(15 * Math.pow(2, fetchAttempts - 1), 300)}s...</span>`;
+        }
+        const delay = Math.min(15000 * Math.pow(2, fetchAttempts - 1), 300000);
+        setTimeout(fetchRates, delay);
+        return;
     }
 
-    // Retry with backoff: 15s, 30s, 60s, 120s, max 5min
-    const delay = Math.min(15000 * Math.pow(2, fetchAttempts - 1), 300000);
-    setTimeout(fetchRates, delay);
+    // Primary source succeeded — store rates
+    rates = primaryResult.rates;
+    rateDate = primaryResult.date;
+    rateSource = primaryResult.source;
+    ratesLoaded = true;
+    fetchAttempts = 0;
+
+    // Check for missing currencies (e.g. PKR not in ECB) and fill from other sources
+    const missingCodes = CURRENCIES.filter(c => !rates[c.code]).map(c => c.code);
+    if (missingCodes.length > 0) {
+        for (let i = 0; i < RATE_SOURCES.length; i++) {
+            if (i === primarySourceIndex) continue; // skip the source we already used
+            try {
+                const supplement = await RATE_SOURCES[i].fetch(codes);
+                let filled = 0;
+                missingCodes.forEach(code => {
+                    if (!rates[code] && supplement.rates[code]) {
+                        rates[code] = supplement.rates[code];
+                        filled++;
+                    }
+                });
+                if (filled > 0) console.log(`[m3converter] Filled ${filled} missing rate(s) from ${RATE_SOURCES[i].name}`);
+                if (CURRENCIES.every(c => rates[c.code])) break; // all filled
+            } catch (e) {
+                continue;
+            }
+        }
+    }
+
+    // Update header
+    timeEl.textContent = `${primaryResult.source} · ${primaryResult.date}`;
+    dot.style.background = '#4caf50';
+
+    // Check if rates are stale (older than 3 days — covers weekends)
+    const ageMs = Date.now() - new Date(primaryResult.date + 'T00:00:00Z').getTime();
+    const ageDays = ageMs / (1000 * 60 * 60 * 24);
+
+    if (ageDays > 3) {
+        banner.className = 'status-banner stale';
+        banner.innerHTML = `⚠ Rates are ${Math.floor(ageDays)} days old (${primaryResult.date}). ECB may not have published recent data.<br><span class="retry-info">Source: ${primaryResult.source}</span>`;
+        dot.style.background = '#ffb700';
+    } else {
+        banner.className = 'status-banner';
+        banner.style.display = 'none';
+    }
+
+    renderGrid();
 }
 
 // ─── CONVERSION ─────────────────────────────────────────────────
@@ -720,7 +749,7 @@ function convert(usdPerMbf, currencyCode) {
 
 function formatValue(value, code) {
     if (value === null) return '—';
-    if (['JPY', 'KRW', 'IDR', 'INR'].includes(code)) return value.toLocaleString('en-US', { maximumFractionDigits: 0 });
+    if (['JPY', 'KRW', 'IDR', 'INR', 'PKR', 'VND'].includes(code)) return value.toLocaleString('en-US', { maximumFractionDigits: 0 });
     return value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
