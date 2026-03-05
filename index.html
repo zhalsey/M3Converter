@@ -550,6 +550,7 @@
 const MBF_TO_M3 = 2.359737;  // 1 MBF = 2.359737 M³ (NHLA standard: 423.776 BF/M³)
 
 const CURRENCIES = [
+    { code: 'USD', name: 'US Dollar', symbol: '$', flag: '🇺🇸' },
     { code: 'EUR', name: 'Euro', symbol: '€', flag: '🇪🇺' },
     { code: 'CAD', name: 'Canadian Dollar', symbol: 'C$', flag: '🇨🇦' },
     { code: 'GBP', name: 'British Pound', symbol: '£', flag: '🇬🇧' },
@@ -575,7 +576,7 @@ const CURRENCIES = [
     { code: 'TRY', name: 'Turkish Lira', symbol: '₺', flag: '🇹🇷' },
 ];
 
-const DEFAULT_ACTIVE = ['EUR', 'CAD', 'GBP', 'PKR'];
+const DEFAULT_ACTIVE = ['USD', 'EUR', 'CAD', 'GBP', 'PKR'];
 
 // ─── STATE ──────────────────────────────────────────────────────
 // rates starts EMPTY — no conversions until live data loads
@@ -694,6 +695,7 @@ async function fetchRates() {
 
     // Primary source succeeded — store rates
     rates = primaryResult.rates;
+    rates['USD'] = 1;  // USD is the base currency, always 1:1
     rateDate = primaryResult.date;
     rateSource = primaryResult.source;
     ratesLoaded = true;
